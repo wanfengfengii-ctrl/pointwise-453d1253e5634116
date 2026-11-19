@@ -1,0 +1,27 @@
+{
+  "roster": [["R-A", "R"], ["L-A", "L"], ["L-B", "L"], ["L-C", "L"]],
+  "right_reading": ["R-A", "r1", 5, 2],
+  "cases": [
+    {
+      "name": "equal-values",
+      "events": [["end", "ticket", 2], ["end", "reading", 2], ["ticket", 1, 4, "L-A", 1, 2], ["ticket", 2, 7, "L-B", 1, 2], ["reading", 1, 3, 1, "r1", 7], ["reading", 2, 9, 2, "r2", 7]],
+      "state": "ambiguous"
+    },
+    {
+      "name": "unmatched-shot",
+      "events": [["ticket", 1, 4, "L-A", 1, 1], ["ticket", 2, 7, "L-B", 1, 1], ["reading", 1, 3, 1, "r1", 7], ["reading", 2, 9, 2, "r2", 13], ["end", "ticket", 2], ["end", "reading", 2]],
+      "state": "no_match"
+    },
+    {
+      "name": "late-reading",
+      "events": [["end", "ticket", 2], ["end", "reading", 2], ["ticket", 2, 7, "L-B", 1, 1], ["reading", 1, 3, 1, "r1", 7], ["expect", "pending"], ["ticket", 1, 4, "L-A", 1, 2], ["expect", "pending"], ["reading", 2, 9, 2, "r2", 13]],
+      "state": "sealed",
+      "report": [
+        ["R-A", "within_limit", "5", [["r1", 1, 2, "5", "5", null]]],
+        ["L-A", "over_limit", "13", [["r2", 2, 9, "13", "13", [2, [1, 4, "L-A", 1, 2]]]]],
+        ["L-B", "within_limit", "7", [["r1", 1, 3, "7", "7", [1, [2, 7, "L-B", 1, 1]]]]],
+        ["L-C", "missing", null, []]
+      ]
+    }
+  ]
+}
