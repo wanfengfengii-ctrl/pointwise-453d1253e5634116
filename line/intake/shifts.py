@@ -32,11 +32,13 @@ def register(db, shift_id, left, right, entries):
     return shift_id
 
 
-def open(db, shift_id, left_version, right_version):
+def open(db, shift_id, left_version, right_version, *, anonymous_station=None):
     if not valid_identifier(shift_id):
         raise OpeningRejected('a valid shift identifier is required')
     if not valid_database_id(left_version) or not valid_database_id(right_version):
         raise OpeningRejected('both profile version numbers are required')
+    if anonymous_station is not None and not valid_identifier(anonymous_station):
+        raise OpeningRejected('the anonymous station must be a valid identifier')
 
     registry = ShiftRegistry(db)
     versions = ProfileRevisions(db)
@@ -49,6 +51,12 @@ def open(db, shift_id, left_version, right_version):
             profile = versions.get_version(version)
             if profile is None or profile.station != station:
                 raise OpeningRejected(f'version {version} does not belong to station {station!r}')
-        if not registry.freeze_shift(shift_id, left_version, right_version):
+        if anonymous_station is not None:
+            try:
+                registration.stations.side_of(anonymous_station)
+            except ValueError as exc:
+                raise OpeningRejected(
+                    f'anonymous station {anonymous_station!r} is not in this shift') from exc
+        if not registry.freeze_shift(shift_id, left_version, right_version, anonymous_station):
             raise OpeningRejected(f'shift {shift_id!r} is already open')
         return registry.get_opened_shift(shift_id)

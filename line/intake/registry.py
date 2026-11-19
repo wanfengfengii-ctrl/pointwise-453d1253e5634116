@@ -15,6 +15,7 @@ class RegisteredShift:
 class OpenedShift(RegisteredShift):
     left_version: int
     right_version: int
+    anonymous_station: str | None = None
 
     def version_for(self, station):
         side = self.stations.side_of(station)
@@ -38,7 +39,8 @@ class ShiftRegistry:
 
     def _shift_row(self, shift_id):
         return self.db.execute(
-            'SELECT left_station, right_station, left_version, right_version FROM shifts WHERE shift_id = ?',
+            'SELECT left_station, right_station, left_version, right_version, anonymous_station '
+            'FROM shifts WHERE shift_id = ?',
             (shift_id,),
         ).fetchone()
 
@@ -55,10 +57,11 @@ class ShiftRegistry:
             return None
         return RegisteredShift(shift_id, StationPair(row[0], row[1]), self._roster(shift_id))
 
-    def freeze_shift(self, shift_id, left_version, right_version):
+    def freeze_shift(self, shift_id, left_version, right_version, anonymous_station=None):
         result = self.db.execute(
-            'UPDATE shifts SET left_version = ?, right_version = ? WHERE shift_id = ? AND left_version IS NULL',
-            (left_version, right_version, shift_id),
+            'UPDATE shifts SET left_version = ?, right_version = ?, anonymous_station = ? '
+            'WHERE shift_id = ? AND left_version IS NULL',
+            (left_version, right_version, anonymous_station, shift_id),
         )
         return result.rowcount == 1
 
@@ -66,8 +69,9 @@ class ShiftRegistry:
         row = self._shift_row(shift_id)
         if row is None or row[2] is None:
             return None
-        left, right, left_version, right_version = row
-        return OpenedShift(shift_id, StationPair(left, right), self._roster(shift_id), left_version, right_version)
+        left, right, left_version, right_version, anonymous_station = row
+        return OpenedShift(shift_id, StationPair(left, right), self._roster(shift_id),
+                           left_version, right_version, anonymous_station)
 
 
 def initialize_intake(db):
@@ -81,6 +85,7 @@ def initialize_intake(db):
             CHECK ((left_version IS NULL) = (right_version IS NULL))
         )
     ''')
+    _ensure_anonymous_column(db)
     db.execute('''
         CREATE TABLE IF NOT EXISTS roster_items (
             shift_id TEXT NOT NULL REFERENCES shifts(shift_id),
@@ -91,3 +96,9 @@ def initialize_intake(db):
             UNIQUE (shift_id, position)
         )
     ''')
+
+
+def _ensure_anonymous_column(db):
+    columns = {row[1] for row in db.execute('PRAGMA table_info(shifts)')}
+    if 'anonymous_station' not in columns:
+        db.execute('ALTER TABLE shifts ADD COLUMN anonymous_station TEXT')

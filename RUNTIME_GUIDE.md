@@ -30,7 +30,7 @@
   "verify": [
     "python3",
     "-B",
-    "check_project.py"
+    "check_all.py"
   ],
   "demo": [
     "python3",
@@ -40,3 +40,5 @@
   ]
 }
 ```
+
+`check_all.py` 依次运行完整回归（`check_project.py`）、匿名样例回放（`check_anonymous.py replay`）和工作日演示（`line.workday`），任一失败即返回非零退出码。

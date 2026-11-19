@@ -71,6 +71,7 @@ class SealStore:
             if reading is None:
                 raise LookupError(f'seal {seal_id} references missing reading {reading_id!r}')
             readings_by_position.setdefault(position, []).append(reading)
+        readings_by_position.update(self._anonymous_readings(seal_id))
 
         rows = self.db.execute('''
             SELECT position, specimen_id, count, max_n, max_d, status
@@ -82,6 +83,31 @@ class SealStore:
             readings = tuple(readings_by_position.get(position, ()))
             details.append(QualityDetail(position, specimen_id, count, peak, status, readings))
         return tuple(details)
+
+    def _anonymous_readings(self, seal_id):
+        from line.capture.anonymous import AnonymousJournal, AnonymousReading
+
+        tickets = {}
+        by_position = {}
+        rows = self.db.execute('''
+            SELECT position, shift_id, station, reading_seq, ticket_seq
+            FROM anonymous_seal_readings WHERE seal_id = ? ORDER BY position, evidence_order
+        ''', (seal_id,))
+        journal = AnonymousJournal(self.db)
+        for position, shift_id, station, reading_seq, ticket_seq in rows:
+            ticket = tickets.get((shift_id, station, ticket_seq))
+            if ticket is None:
+                ticket = journal.ticket(shift_id, station, ticket_seq)
+                if ticket is None:
+                    raise LookupError(f'seal {seal_id} references missing ticket {ticket_seq}')
+                tickets[shift_id, station, ticket_seq] = ticket
+            reading = journal.reading(shift_id, station, reading_seq)
+            if reading is None:
+                raise LookupError(f'seal {seal_id} references missing reading {reading_seq}')
+            by_position.setdefault(position, []).append(AnonymousReading(
+                station, ticket, reading.reading_id, reading.source_seq, reading.source_line,
+                reading.shot, reading.raw_code, reading.thickness_um, reading.profile_version))
+        return by_position
 
 
 def initialize_closing(db):
@@ -95,6 +121,7 @@ def initialize_closing(db):
             profile_version INTEGER NOT NULL REFERENCES gauge_versions(version)
         )
     ''')
+    _ensure_anonymous_column(db)
     db.execute('''
         CREATE TABLE IF NOT EXISTS seal_details (
             seal_id INTEGER NOT NULL REFERENCES station_seals(seal_id),
@@ -123,3 +150,27 @@ def initialize_closing(db):
             FOREIGN KEY (shift_id, reading_id) REFERENCES readings(shift_id, reading_id)
         )
     ''')
+    db.execute('''
+        CREATE TABLE IF NOT EXISTS anonymous_seal_readings (
+            seal_id INTEGER NOT NULL,
+            position INTEGER NOT NULL,
+            evidence_order INTEGER NOT NULL CHECK (evidence_order >= 0),
+            shift_id TEXT NOT NULL,
+            station TEXT NOT NULL,
+            reading_seq INTEGER NOT NULL,
+            ticket_seq INTEGER NOT NULL,
+            PRIMARY KEY (seal_id, position, evidence_order),
+            UNIQUE (seal_id, shift_id, station, reading_seq),
+            FOREIGN KEY (seal_id, position) REFERENCES seal_details(seal_id, position),
+            FOREIGN KEY (shift_id, station, reading_seq)
+                REFERENCES anonymous_readings(shift_id, station, source_seq),
+            FOREIGN KEY (shift_id, station, ticket_seq)
+                REFERENCES anonymous_tickets(shift_id, station, source_seq)
+        )
+    ''')
+
+
+def _ensure_anonymous_column(db):
+    columns = {row[1] for row in db.execute('PRAGMA table_info(station_seals)')}
+    if 'anonymous' not in columns:
+        db.execute('ALTER TABLE station_seals ADD COLUMN anonymous INTEGER NOT NULL DEFAULT 0')
